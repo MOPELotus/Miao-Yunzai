@@ -2,6 +2,24 @@ function displayText(value) {
   return String(value ?? "").replace(/[\r\n\u2028\u2029]+/g, " ").trim()
 }
 
+async function replyWithAvatar(instance, content) {
+  const userId = String(instance.e.user_id)
+  if (/^\d+$/.test(userId)) {
+    try {
+      const message = Array.isArray(content) ? content : [content]
+      const result = await instance.reply([
+        segment.image(`https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=100`),
+        "\n",
+        ...message,
+      ])
+      if (result !== false) return result
+    } catch (error) {
+      logger.warn(`[进退群通知] 头像消息发送失败，改发文字：${error.message}`)
+    }
+  }
+  return instance.reply(content)
+}
+
 export class newcomer extends plugin {
   constructor() {
     super({
@@ -21,7 +39,7 @@ export class newcomer extends plugin {
     await redis.set(key, "1", { EX: 30 })
 
     const groupName = displayText(e.group_name || e.group?.name || e.group?.group_name)
-    await this.reply([
+    await replyWithAvatar(this, [
       `🌸 欢迎来到${groupName ? `「${groupName}」` : "本群"}\n\n`,
       segment.at(e.user_id),
       " 欢迎加入～\n先看看群公告，有问题随时交流。",
@@ -49,6 +67,6 @@ export class outNotice extends plugin {
       ? `📋 成员变动\n\n${who} 已被移出本群。`
       : `🍃 成员离开\n\n${who} 已退出本群。\n有缘再见，祝一切顺利。`
     logger.mark(`[退出通知]${e.logText} ${msg}`)
-    await this.reply(msg)
+    await replyWithAvatar(this, msg)
   }
 }
