@@ -1,6 +1,7 @@
 import plugin from "../../lib/plugins/plugin.js"
 import fs from "node:fs"
 import YAML from "yaml"
+import cfg from "../../lib/config/config.js"
 
 const configFile = new URL("../../config/config/group-leave-blacklist.yaml", import.meta.url)
 
@@ -8,6 +9,23 @@ function enabled(e) {
   if (!fs.existsSync(configFile)) return false
   const config = YAML.parse(fs.readFileSync(configFile, "utf8")) || {}
   return config.enable === true && (config.groups || []).map(String).includes(String(e.group_id))
+}
+
+function addBotBlacklist(e) {
+  // 与机器人已有的主人保护一致，避免主人退群后失去管理权限。
+  if (cfg.masterQQ.map(String).includes(String(e.user_id))) return false
+  const file = new URL("../../config/config/other.yaml", import.meta.url)
+  const document = YAML.parseDocument(fs.readFileSync(file, "utf8"))
+  const current = document.get("blackUser")?.toJSON?.() || []
+  const userId = Number(e.user_id) || String(e.user_id)
+  const exists = current.some(id => String(id) === String(userId))
+  if (!exists) {
+    document.set("blackUser", [...current, userId])
+    fs.writeFileSync(file, document.toString(), "utf8")
+  }
+  // file_watch=false 时也立即更新云崽的配置缓存。
+  cfg.config["config.other"] = document.toJSON()
+  return !exists
 }
 
 function key(e) {
@@ -19,17 +37,22 @@ export class LeaveBlacklistNotice extends plugin {
     super({ name: "退群自动拉黑", event: "notice.group", priority: -10002 })
   }
 
-  async accept(e = this.e) {
+  init() {
+    const listener = e => this.handle(e).catch(error => logger.error("[退群自动拉黑] 处理群事件失败", error))
+    Bot.on("notice.group", listener)
+    this.addCleanup(() => Bot.off("notice.group", listener))
+  }
+
+  async handle(e = this.e) {
     if (!enabled(e) || String(e.user_id) === String(e.self_id) || e.dismiss) return false
     if (e.sub_type === "decrease") {
-      // 管理员移出不当成主动退群；缺少操作者时不猜测。
-      if (!e.operator_id || String(e.operator_id) !== String(e.user_id)) return false
       await redis.hSet(key(e), String(e.user_id), JSON.stringify({
         time: e.time || Math.floor(Date.now() / 1000),
         self_id: e.self_id,
         name: e.member?.card || e.member?.nickname || e.nickname || "",
       }))
-      logger.mark(`[退群自动拉黑] ${e.group_id} 已记录主动退群成员 ${e.user_id}`)
+      addBotBlacklist(e)
+      logger.mark(`[退群自动拉黑] ${e.group_id} 已记录退群或被移出成员 ${e.user_id}`)
     } else if (e.sub_type === "increase" && await redis.hGet(key(e), String(e.user_id))) {
       await e.group.kickMember(e.user_id, true)
       logger.mark(`[退群自动拉黑] ${e.group_id} 已移出重新加入的黑名单成员 ${e.user_id}`)
@@ -44,10 +67,16 @@ export class LeaveBlacklistRequest extends plugin {
     super({ name: "退群黑名单入群拦截", event: "request.group", priority: -10002 })
   }
 
-  async accept(e = this.e) {
+  init() {
+    const listener = e => this.handle(e).catch(error => logger.error("[退群自动拉黑] 处理入群申请失败", error))
+    Bot.on("request.group", listener)
+    this.addCleanup(() => Bot.off("request.group", listener))
+  }
+
+  async handle(e = this.e) {
     if (!enabled(e) || String(e.user_id) === String(e.self_id)) return false
     if (!await redis.hGet(key(e), String(e.user_id))) return false
-    await e.approve(false, "本群已开启退群自动拉黑，如需返回请联系群主")
+    await e.approve(false, "主动退群被拉黑")
     logger.mark(`[退群自动拉黑] ${e.group_id} 已拒绝黑名单成员 ${e.user_id} 的加群请求`)
     return "return"
   }
