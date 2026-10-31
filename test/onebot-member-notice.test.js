@@ -102,3 +102,22 @@ test("departures without cached profile data still emit a usable member object",
   assert.equal(events[0].event.member.user_id, 300)
   assert.equal(typeof events[0].event.member.getInfo, "function")
 })
+
+test("invites retain their inviter after notice subtypes are normalized", async () => {
+  const { adapter, bot, events } = setup({ user_id: 300, nickname: "Joined" })
+  await adapter.makeNotice({
+    ...notice(bot, "group_increase"),
+    sub_type: "invite",
+    operator_id: 400,
+  })
+  assert.equal(events[0].event.sub_type, "increase")
+  assert.equal(events[0].event.increase_type, "invite")
+  assert.equal(events[0].event.inviter_id, 400)
+})
+
+test("approved applications are never relabeled as invitations", async () => {
+  const { adapter, bot, events } = setup({ user_id: 300, nickname: "Joined" })
+  await adapter.makeNotice({ ...notice(bot, "group_increase"), operator_id: 400 })
+  assert.equal(events[0].event.increase_type, "approve")
+  assert.equal(events[0].event.inviter_id, undefined)
+})

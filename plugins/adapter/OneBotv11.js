@@ -1190,6 +1190,8 @@ Bot.adapter.push(
           )
           break
         case "group_increase": {
+          data.increase_type ??= data.sub_type
+          if (data.increase_type === "invite") data.inviter_id ??= data.operator_id
           Bot.makeLog(
             "info",
             `群成员增加：${data.operator_id} => ${data.user_id} ${data.sub_type}`,
