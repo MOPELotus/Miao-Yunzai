@@ -31,7 +31,7 @@ test("messages separated by more than the idle window do not trigger", () => {
 })
 test("commands, empty messages and unsupported message types break the round", () => {
   const tracker = new RepeatTracker()
-  for (const msg of [text("#更新"), text("  /test"), text("\n"), [], [{ type: "at", qq: "all" }], [{ type: "reply", id: 1 }]]) {
+  for (const msg of [text("#更新"), text("  /test"), text("*深渊"), text("%面板"), text("  ＊面板"), text("％深渊"), text("＃深渊"), text("\n"), [], [{ type: "at", qq: "all" }], [{ type: "reply", id: 1 }]]) {
     tracker.observe(100, 1, text("A"))
     assert.equal(tracker.observe(100, 2, msg), null)
     assert.equal(tracker.observe(100, 2, text("A")), null)
