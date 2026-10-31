@@ -174,7 +174,7 @@ bash <(curl -L https://raw.gitcode.com/TimeRainStarSky/Yunzai/raw/main/lib/tools
 
 <details><summary>LLOneBot</summary><blockquote>
 
-  下载安装 [LLOneBot](https://github.com/LLOneBot/LLOneBot)，启用反向 WebSocket，添加地址：
+  下载安装 [LLOneBot](https://github.com/LLOneBot/LuckyLilliaBot)，启用反向 WebSocket，添加地址：
 
   ```
   ws://localhost:2536/OneBotv11
