@@ -1199,7 +1199,16 @@ Bot.adapter.push(
           const group = data.bot.pickGroup(data.group_id)
           group.getInfo(true, true)
           if (data.user_id === data.self_id && cfg.bot.cache_group_member) group.getMemberMap()
-          else group.pickMember(data.user_id).getInfo(true, true)
+          else {
+            const member = group.pickMember(data.user_id)
+            try {
+              Object.assign(member, await member.getInfo(true, true))
+            } catch (err) {
+              Bot.makeLog("warn", ["获取入群成员资料失败", err], data.self_id)
+            }
+            data.member = { ...member, ...data.member }
+            data.nickname ||= data.member.nickname || data.sender?.nickname
+          }
           break
         }
         case "group_decrease": {
@@ -1209,6 +1218,11 @@ Bot.adapter.push(
             `${data.self_id} <= ${data.group_id}`,
             true,
           )
+          // Preserve the departing member's profile before removing their cache entry.
+          data.member ??= data.bot.pickMember(data.group_id, data.user_id)
+          data.nickname ||= data.member.nickname || data.sender?.nickname
+          data.group_name ||=
+            data.bot.gl.get(data.group_id)?.group_name || data.bot.gl.get(data.group_id)?.name
           if (data.user_id === data.self_id) {
             data.bot.gl.delete(data.group_id)
             data.bot.gml.delete(data.group_id)
