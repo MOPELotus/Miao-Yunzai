@@ -1,3 +1,7 @@
+function displayText(value) {
+  return String(value ?? "").replace(/[\r\n\u2028\u2029]+/g, " ").trim()
+}
+
 export class newcomer extends plugin {
   constructor() {
     super({
@@ -7,25 +11,20 @@ export class newcomer extends plugin {
     })
   }
 
-  /** 接受到消息都会执行一次 */
   async accept() {
-    if (this.e.user_id == this.e.self_id) return
+    const e = this.e
+    if (e.user_id == e.self_id) return
 
-    /** 定义入群欢迎内容 */
-    let msg = "欢迎新人！"
-    /** 冷却cd 30s */
-    let cd = 30
-
-    /** cd */
-    let key = `Yz:newcomers:${this.e.group_id}`
+    // 沿用每群 30 秒冷却，避免集中进群时刷屏。
+    const key = `Yz:newcomers:${e.group_id}`
     if (await redis.get(key)) return
-    redis.set(key, "1", { EX: cd })
+    await redis.set(key, "1", { EX: 30 })
 
-    /** 回复 */
+    const groupName = displayText(e.group_name || e.group?.name || e.group?.group_name)
     await this.reply([
-      segment.at(this.e.user_id),
-      // segment.image(),
-      msg,
+      `🌸 欢迎来到${groupName ? `「${groupName}」` : "本群"}\n\n`,
+      segment.at(e.user_id),
+      " 欢迎加入～\n先看看群公告，有问题随时交流。",
     ])
   }
 }
@@ -34,28 +33,22 @@ export class outNotice extends plugin {
   constructor() {
     super({
       name: "退群通知",
-      dsc: "xx退群了",
+      dsc: "群成员离开或被移出时发送提示",
       event: "notice.group.decrease",
     })
-
-    /** 退群提示词 */
-    this.tips = "退群了"
   }
 
   async accept() {
-    if (this.e.user_id == this.e.self_id) return
+    const e = this.e
+    if (e.user_id == e.self_id || e.dismiss) return
 
-    let name, msg
-    if (this.e.member) {
-      name = this.e.member.card || this.e.member.nickname
-    }
-
-    if (name) {
-      msg = `${name}(${this.e.user_id}) ${this.tips}`
-    } else {
-      msg = `${this.e.user_id} ${this.tips}`
-    }
-    logger.mark(`[退出通知]${this.e.logText} ${msg}`)
+    const name = displayText(e.member?.card) || displayText(e.member?.nickname) || displayText(e.nickname)
+    const who = name ? `${name}（${e.user_id}）` : `QQ ${e.user_id}`
+    const kicked = e.operator_id && String(e.operator_id) !== String(e.user_id)
+    const msg = kicked
+      ? `📋 成员变动\n\n${who} 已被移出本群。`
+      : `🍃 成员离开\n\n${who} 已退出本群。\n有缘再见，祝一切顺利。`
+    logger.mark(`[退出通知]${e.logText} ${msg}`)
     await this.reply(msg)
   }
 }
