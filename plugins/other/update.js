@@ -1,6 +1,7 @@
 import cfg from "../../lib/config/config.js"
 import fs from "node:fs/promises"
 import { Restart } from "./restart.js"
+import { retryGitCommand } from "../../lib/tools/gitRetry.js"
 
 let uping = false
 
@@ -133,18 +134,22 @@ export class update extends plugin {
 
   async runUpdate(plugin = "") {
     let cm = "git pull"
+    let prepare = plugin ? "" : "git checkout package.json"
     let type = "更新"
-    if (!plugin) cm = `git checkout package.json && ${cm}`
 
     if (this.e.msg.includes("强制")) {
       type = "强制更新"
-      cm = `git reset --hard ${await this.getRemoteBranch(true, plugin)} && git pull --rebase`
+      prepare = `git reset --hard ${await this.getRemoteBranch(true, plugin)}`
+      cm = "git pull --rebase"
     }
     this.oldCommitId = await this.getCommitId(plugin)
 
     logger.mark(`${this.e.logFnc} 开始${type} ${this.typeName}`)
     if (!this.quiet) await this.reply(`开始${type} ${this.typeName}`)
-    const ret = await this.exec(cm, plugin)
+    const prepared = prepare ? await this.exec(prepare, plugin, { quiet: true }) : null
+    const ret = prepared?.error
+      ? prepared
+      : await retryGitCommand(() => this.exec(cm, plugin, { quiet: true }))
 
     if (ret.error && !(await this.gitErr(plugin, ret.stdout, ret.error.message))) {
       logger.mark(`${this.e.logFnc} 更新失败 ${this.typeName}`)
@@ -206,11 +211,15 @@ export class update extends plugin {
   }
 
   gitErrUrl(error) {
-    return error.match(/'(.+?)'/g)[0].replace(/'(.+?)'/, "$1")
+    return error.match(/'(.+?)'/)?.[1] || "未知地址"
   }
 
   async gitErr(plugin, stdout, error) {
-    if (/unable to access|无法访问/.test(error))
+    if (/could not read (?:Username|Password)|Authentication failed|鉴权失败/.test(error))
+      await this.reply(
+        `远程仓库认证失败：${this.gitErrUrl(error)}\n请检查仓库访问权限、远端地址及代理配置`,
+      )
+    else if (/unable to access|无法访问/.test(error))
       await this.reply(`远程仓库连接错误：${this.gitErrUrl(error)}`)
     else if (
       /not found|未找到|does not (exist|appear)|不存在|Authentication failed|鉴权失败/.test(error)
@@ -222,7 +231,9 @@ export class update extends plugin {
     )
       await this.reply(`${error}\n${stdout}\n若修改过文件请手动更新，否则发送 #强制更新${plugin}`)
     else if (/divergent branches|偏离的分支/.test(error)) {
-      const ret = await this.exec("git pull --rebase", plugin)
+      const ret = await retryGitCommand(() =>
+        this.exec("git pull --rebase", plugin, { quiet: true }),
+      )
       if (!ret.error && /Successfully rebased|成功变基/.test(ret.stdout + ret.stderr)) return true
       await this.reply(`${error}\n${stdout}\n若修改过文件请手动更新，否则发送 #强制更新${plugin}`)
     } else await this.reply(`${error}\n${stdout}\n未知错误，可尝试发送 #强制更新${plugin}`)
